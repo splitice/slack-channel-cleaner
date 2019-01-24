@@ -102,6 +102,7 @@ function getHistoryMessage(data, index) {
             }
 
             deferred.promise.then(function(){
+                _messageList = []
                 getHistoryMessage(data, index)
             })
         }
@@ -118,12 +119,15 @@ function removeHistoryMessage(index, deferred) {
         return;
     }
     var e = _messageList[index];
-    request({ url: slack.url + slack.api.chat_delete, qs: { token: slack.token, channel: e.channelId, ts: e.message.ts }, timeout: 5000, json: true }, function (err, resp, reqData) {
-        if (err || resp.statusCode != 200)
-            return err || new Error("Error: " + resp.statusCode);
+    request({ url: slack.url + slack.api.chat_delete, qs: { token: slack.token, channel: e.channelId, ts: e.message.ts }, timeout: 5000, json: true }, async function (err, resp, reqData) {
+        if (err || resp.statusCode != 200) {
+            var i = index + 1;
+            removeHistoryMessage(i, deferred);
+        }
         if (reqData.ok || reqData.ok == "true") {
             console.log(colors.data(" >>>> Message deleted. > Message Timestamp: " + e.message.ts + " / Index: " + index + " - Message Count: " + _messageList.length));
             var i = index + 1;
+            await Q.delay(25)
             removeHistoryMessage(i, deferred);
         }
         else {
