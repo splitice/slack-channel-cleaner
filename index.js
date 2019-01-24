@@ -127,7 +127,7 @@ function removeHistoryMessage(index, deferred) {
         if (reqData.ok || reqData.ok == "true") {
             console.log(colors.data(" >>>> Message deleted. > Message Timestamp: " + e.message.ts + " / Index: " + index + " - Message Count: " + _messageList.length));
             var i = index + 1;
-            await Q.delay(25)
+            await Q.delay(100)
             removeHistoryMessage(i, deferred);
         }
         else {
