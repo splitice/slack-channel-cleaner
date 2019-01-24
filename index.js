@@ -5,6 +5,8 @@ var inquirer = require("inquirer");
 var Async = require("async");
 var linqts_1 = require('linqts');
 var colors = require('colors');
+var moment = require('moment')
+var Q = require('q')
 colors.setTheme({
     input: 'grey',
     prompt: 'cyan',
@@ -19,8 +21,8 @@ var slack = {
     url: 'https://slack.com/api/',
     token: '',
     api: {
-        channels_list: 'channels.list',
-        channels_history: 'channels.history',
+        channels_list: 'conversations.list',
+        channels_history: 'conversations.history',
         chat_delete: 'chat.delete'
     }
 };
@@ -28,6 +30,11 @@ var _messageList;
 Async.auto({
     getToken: function (next, data) {
         _messageList = [];
+        if(process.env.SLACK_TOKEN){
+            slack.token = process.env.SLACK_TOKEN
+            next(null, process.env.SLACK_TOKEN)
+            return
+        }
         inquirer.prompt([{ message: "Enter your Slack API Token: ", type: "string", name: "token" }]).then(function (answer) {
             if (answer && answer.token) {
                 slack.token = answer.token;
@@ -40,7 +47,7 @@ Async.auto({
         });
     },
     inputs: ['getToken', function (next, data) {
-            request({ url: slack.url + slack.api.channels_list, qs: { token: slack.token }, timeout: 5000, json: true }, function (err, resp, reqData) {
+            request({ url: slack.url + slack.api.channels_list, qs: { token: slack.token, types:"public_channel,private_channel" }, timeout: 5000, json: true }, function (err, resp, reqData) {
                 if (err || resp.statusCode != 200)
                     return err || new Error("Error: " + resp.statusCode);
                 if (reqData.ok || reqData.ok == "true") {
@@ -62,37 +69,54 @@ Async.auto({
             });
         }]
 });
+function unixToDate(UNIX_timestamp){
+    var a = new Date(UNIX_timestamp * 1000);
+    return a
+  }
+
 function getHistoryMessage(data, index) {
     if (data.length > 0 && (data.length == index)) {
         return;
     }
     var e = data[index];
-    request({ url: slack.url + slack.api.channels_history, qs: { token: slack.token, channel: e, count: 1000 }, timeout: 5000, json: true }, function (err, resp, reqData) {
+    const latest = moment().subtract(90, "days").unix()
+    request({ url: slack.url + slack.api.channels_history, qs: { token: slack.token, channel: e, count: 100, latest}, timeout: 5000, json: true }, function (err, resp, reqData) {
         if (err || resp.statusCode != 200)
             return err || new Error("Error: " + resp.statusCode);
         if (reqData.ok || reqData.ok == "true") {
             var messages = reqData.messages;
             var messageList = new linqts_1.List(messages);
             console.log(colors.debug(" >> Fetching the channel history. ID: " + e + " / Count: " + messageList.Count() + " " + (messageList.Count() == 0 ? "- " + colors.error("Data not available") : "")));
+            var currentTime = moment()
             messageList.ToArray().forEach(function (k) {
-                _messageList.push({ channelId: e, message: k });
+                const date = unixToDate(k.ts)
+                if(currentTime.diff(moment(date), "days") > 90){
+                    _messageList.push({ channelId: e, message: k });
+                }
             });
-            if (messageList.Count() > 0 && !start)
-                removeHistoryMessage(0);
-            var i = index + 1;
-            getHistoryMessage(data, i);
+
+            const deferred = Q.defer()
+            
+            if(_messageList[0]){
+                removeHistoryMessage(0, deferred)
+            }
+
+            deferred.promise.then(function(){
+                getHistoryMessage(data, index)
+            })
         }
         else {
             console.log(colors.error("Error: " + reqData.error));
         }
     });
+            
 }
-function removeHistoryMessage(index) {
+function removeHistoryMessage(index, deferred) {
     if (_messageList.length - 1 == index) {
+        deferred.resolve()
         console.log(colors.info("Done.........."));
         return;
     }
-    start = true;
     var e = _messageList[index];
     request({ url: slack.url + slack.api.chat_delete, qs: { token: slack.token, channel: e.channelId, ts: e.message.ts }, timeout: 5000, json: true }, function (err, resp, reqData) {
         if (err || resp.statusCode != 200)
@@ -100,7 +124,7 @@ function removeHistoryMessage(index) {
         if (reqData.ok || reqData.ok == "true") {
             console.log(colors.data(" >>>> Message deleted. > Message Timestamp: " + e.message.ts + " / Index: " + index + " - Message Count: " + _messageList.length));
             var i = index + 1;
-            removeHistoryMessage(i);
+            removeHistoryMessage(i, deferred);
         }
         else {
             console.log(colors.error("Error: " + reqData.error));

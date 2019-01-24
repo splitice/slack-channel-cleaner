@@ -31,6 +31,8 @@
     "colors": "^1.1.2",
     "inquirer": "^1.2.1",
     "linqts": "^1.6.0",
+    "moment": "^2.24.0",
+    "q": "^1.5.1",
     "request": "^2.75.0"
   },
   "devDependencies": {}
